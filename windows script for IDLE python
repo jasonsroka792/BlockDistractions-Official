@@ -1,0 +1,96 @@
+import tkinter as tk
+from tkinter import messagebox
+import time
+import threading
+import subprocess
+import os
+import platform
+
+# ---------- Windows Hosts Path ----------
+hosts_path = r"C:\Windows\System32\drivers\etc\hosts"
+redirect_ip = "127.0.0.1"
+blocked_lines = []
+
+# ---------- Functions ----------
+
+def block_websites(websites):
+    """In progress: blocks websites (requires admin)"""
+    global blocked_lines
+    try:
+        with open(hosts_path, "r+") as file:
+            content = file.read()
+            for site in websites:
+                line = f"{redirect_ip} {site}\n"
+                if line not in content:
+                    file.write(line)
+        blocked_lines = [f"{redirect_ip} {site}" for site in websites]
+        messagebox.showinfo("Info", "Website blocking is in progress!")
+    except PermissionError:
+        messagebox.showerror("Error", "Run this app as Administrator to block websites.")
+
+def unblock_websites():
+    """Remove blocked websites"""
+    try:
+        with open(hosts_path, "r") as file:
+            lines = file.readlines()
+        with open(hosts_path, "w") as file:
+            for line in lines:
+                if line.strip() not in blocked_lines:
+                    file.write(line)
+    except PermissionError:
+        pass  # silently fail if no admin rights
+
+def kill_apps(apps):
+    """Kill Windows apps by name"""
+    for app in apps:
+        subprocess.call(["taskkill", "/F", "/IM", f"{app}.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def start_focus_session():
+    websites = [w.strip() for w in web_entry.get().split(",") if w.strip()]
+    apps = [a.strip() for a in app_entry.get().split(",") if a.strip()]
+    total_seconds = int(time_spinbox.get()) * 60
+
+    # Block websites (in progress)
+    block_websites(websites)
+
+    def countdown():
+        nonlocal total_seconds
+        while total_seconds > 0:
+            mins, secs = divmod(total_seconds, 60)
+            count_label.config(text=f"Time left: {mins:02d}:{secs:02d}")
+            kill_apps(apps)
+            time.sleep(1)
+            total_seconds -= 1
+        count_label.config(text="Focus session complete!")
+        unblock_websites()
+
+    threading.Thread(target=countdown, daemon=True).start()
+
+# ---------- Tkinter GUI ----------
+window = tk.Tk()
+window.title("BlockDistractions - Windows")
+window.geometry("500x350")
+
+tk.Label(window, text="Websites to block (comma-separated) [in progress]").pack(pady=5)
+web_entry = tk.Entry(window, width=50)
+web_entry.pack()
+
+tk.Label(window, text="Apps to block (comma-separated, executable names)").pack(pady=5)
+app_entry = tk.Entry(window, width=50)
+app_entry.pack()
+
+tk.Label(window, text="Focus time (minutes):").pack(pady=5)
+time_spinbox = tk.Spinbox(window, from_=1, to=180, width=5)
+time_spinbox.pack()
+
+count_label = tk.Label(window, text="Time left: 00:00", font=("Segoe UI", 14))
+count_label.pack(pady=20)
+
+start_btn = tk.Button(window, text="Start Focus Session", command=start_focus_session)
+start_btn.pack(pady=10)
+
+def on_close():
+    window.withdraw()  # hide but keep session running
+
+window.protocol("WM_DELETE_WINDOW", on_close)
+window.mainloop()
